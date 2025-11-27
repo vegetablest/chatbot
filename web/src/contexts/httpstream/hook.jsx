@@ -7,5 +7,6 @@ export const useHttpStream = () => {
     if (context === undefined) {
         throw new Error("useHttpStream must be used within a HttpStreamProvider");
     }
+    // ===== 提示：同时提供 streamingStatuses / setConversationStatus / clearConversationStatus =====
     return context;
 };

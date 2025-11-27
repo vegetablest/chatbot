@@ -4,83 +4,104 @@
  *
  * But I need to expose the conversation field to verify that the `replaceAll` action is finished.
  */
-export const messagesReducer = (currentConv, action) => {
+export const messagesReducer = (state, action) => {
     switch (action.type) {
     case "added": {
         console.debug("Adding message: ", action.message);
-        if (action.convId !== currentConv.id) {
-            console.warn(
-                `Message ${action.message.id} belongs to conversation ${action.convId}, not (${currentConv.id}), skip adding...`
-            );
-            return currentConv;
-        }
-        // find reversely could potentially be faster as the full message usually is the last one (streamed).
-        const match = currentConv.messages.findLastIndex(message => message.id === action.message.id);
-        if (match !== -1) {
-            console.warn(`Message with id ${action.message.id} already exists, skip adding...`);
-            return currentConv;
-        }
-        return { ...currentConv, messages: [...currentConv.messages, { ...action.message }] };
+        return updateWithMessages(state, action.convId, (messages) => {
+            const match = messages.findLastIndex(message => message.id === action.message.id);
+            if (match !== -1) {
+                console.warn(`Message with id ${action.message.id} already exists, skip adding...`);
+                return messages;
+            }
+            return [...messages, { ...action.message }];
+        });
     }
     case "appended": {
         console.debug("Appending message: ", action.message);
-        if (action.convId !== currentConv.id) {
-            console.warn(
-                `Message ${action.message.id} belongs to conversation ${action.convId}, not current conversation (${currentConv.id}), skip appending...`
-            );
-            return currentConv;
-        }
-        // find reversely could potentially be faster as the full message usually is the last one (streamed).
-        const match = currentConv.messages.findLastIndex(message => message.id === action.message.id);
-        if (match === -1) {
-            // If the message is not found, add it to the end.
-            return { ...currentConv, messages: [...currentConv.messages, { ...action.message }] };
-        }
-        const matched = currentConv.messages[match];
-        return {
-            ...currentConv,
-            messages: [
-                ...currentConv.messages.slice(0, match),
-                {
-                    ...matched,
-                    content: mergeContentChunks(matched.content, action.message.content),
-                    additional_kwargs: deepMerge(matched.additional_kwargs, action.message.additional_kwargs)
-                },
-                ...currentConv.messages.slice(match + 1)
-            ]
-        }
+        return updateWithMessages(state, action.convId, (messages) => {
+            const match = messages.findLastIndex(message => message.id === action.message.id);
+            if (match === -1) {
+                return [...messages, { ...action.message }];
+            }
+            const matched = messages[match];
+            const updated = {
+                ...matched,
+                content: mergeContentChunks(matched.content, action.message.content),
+                additional_kwargs: deepMerge(matched.additional_kwargs, action.message.additional_kwargs)
+            };
+            return [
+                ...messages.slice(0, match),
+                updated,
+                ...messages.slice(match + 1)
+            ];
+        });
     }
     case "updated": {
         console.debug("Updating message: ", action.message);
-        if (action.convId !== currentConv.id) {
-            console.warn(
-                `Message ${action.message.id} belongs to conversation ${action.convId}, not (${currentConv.id}), skip updating...`
-            );
-            return currentConv;
-        }
-        // find reversely could potentially be faster as the full message usually is the last one (streamed).
-        const match = currentConv.messages.findLastIndex(message => message.id === action.message.id);
-        if (match === -1) {
-            // If the message is not found, add it to the end.
-            return { ...currentConv, messages: [...currentConv.messages, { ...action.message }] };
-        }
-        return {
-            ...currentConv,
-            messages: [
-                ...currentConv.messages.slice(0, match),
-                { ...currentConv.messages[match], ...action.message },
-                ...currentConv.messages.slice(match + 1)
-            ]
-        };
+        return updateWithMessages(state, action.convId, (messages) => {
+            const match = messages.findLastIndex(message => message.id === action.message.id);
+            if (match === -1) {
+                return [...messages, { ...action.message }];
+            }
+            return [
+                ...messages.slice(0, match),
+                { ...messages[match], ...action.message },
+                ...messages.slice(match + 1)
+            ];
+        });
     }
     case "replaceAll": {
-        return {id: action.convId, messages: [...action.messages]};
+        return {
+            activeId: action.convId,
+            conversations: {
+                ...state.conversations,
+                [action.convId]: [...action.messages],
+            },
+        };
+    }
+    case "activated": {
+        if (state.activeId === action.convId) {
+            return state;
+        }
+        if (state.conversations[action.convId]) {
+            return {
+                ...state,
+                activeId: action.convId,
+            };
+        }
+        return {
+            activeId: action.convId,
+            conversations: {
+                ...state.conversations,
+                [action.convId]: [],
+            },
+        };
     }
     default: {
         console.error("Unknown action: ", action);
-        return currentConv;
+        return state;
     }
     }
+};
+
+const updateWithMessages = (state, convId, updater) => {
+    if (!convId) {
+        return state;
+    }
+    const prevMessages = state.conversations[convId];
+    const base = prevMessages ?? [];
+    const nextMessages = updater(base);
+    if (nextMessages === prevMessages) {
+        return state;
+    }
+    return {
+        ...state,
+        conversations: {
+            ...state.conversations,
+            [convId]: nextMessages,
+        },
+    };
 };
 
 

@@ -1,6 +1,6 @@
 import styles from "./index.module.css";
 
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useRef } from "react";
 import { useLoaderData, useNavigation } from "react-router";
 
 import ChatLog from "@/components/ChatLog";
@@ -65,8 +65,8 @@ const Conversation = () => {
     const navigation = useNavigation();
     const { groupedConvsArray: convs, dispatch: dispatchConv } = useConversations();
     const { username } = useUserProfile();
-    const { registerMessageHandler, unregisterMessageHandler, send } = useHttpStream();
-    const { currentConv, dispatch } = useCurrentConv();
+    const { registerMessageHandler, send, streamingStatuses, clearConversationStatus } = useHttpStream();
+    const { currentConv, conversations, dispatch } = useCurrentConv();
     const { setSnackbar } = useSnackbar();
     // Only rendering messages of the following types
     const rendering_messages = new Set(["human", "ai", "AIMessageChunk"]);
@@ -76,13 +76,26 @@ const Conversation = () => {
         if (conversation.id === currentConv.id) {
             return;
         }
-        // Update the message context.
+        const cached = conversations[conversation.id];
+        const serverMessages = conversation.messages ?? [];
+        if (cached !== undefined) {
+            const cachedLength = cached.length;
+            const serverLength = serverMessages.length;
+            const idsAligned = serverMessages.every((message, index) => cached[index]?.id === message.id);
+            if (idsAligned && cachedLength >= serverLength) {
+                dispatch({
+                    type: "activated",
+                    convId: conversation.id,
+                });
+                return;
+            }
+        }
         dispatch({
             type: "replaceAll",
             convId: conversation.id,
-            messages: conversation.messages,
+            messages: serverMessages,
         });
-    }, [conversation, currentConv, dispatch]);
+    }, [conversation, currentConv, conversations, dispatch]);
 
     const sendMessage = useCallback(async (message, skipReordering = false) => {
         const payload = {
@@ -151,6 +164,14 @@ const Conversation = () => {
         sessionStorage.removeItem(initMsgKey);
     }, [conversation, currentConv, sendMessage]);
 
+    useEffect(() => {
+        const status = streamingStatuses?.[conversation.id];
+        if (status === undefined || status === "running") {
+            return;
+        }
+        clearConversationStatus(conversation.id);
+    }, [streamingStatuses, clearConversationStatus, conversation.id]);
+
     const handleStreamMessage = useCallback((data) => {
         if (data === null || data === undefined) {
             return;
@@ -195,15 +216,15 @@ const Conversation = () => {
         }
     }, [dispatch, dispatchConv, setSnackbar, conversation.id]);
 
-    useEffect(() => {
-        // Register the message handler when component mounts
-        registerMessageHandler(handleStreamMessage);
+    const registeredConversationsRef = useRef(new Set());
 
-        // Unregister when component unmounts
-        return () => {
-            unregisterMessageHandler(handleStreamMessage);
-        };
-    }, [registerMessageHandler, unregisterMessageHandler, handleStreamMessage]);
+    useEffect(() => {
+        if (registeredConversationsRef.current.has(conversation.id)) {
+            return;
+        }
+        registerMessageHandler(conversation.id, handleStreamMessage, { persistent: true });
+        registeredConversationsRef.current.add(conversation.id);
+    }, [conversation.id, registerMessageHandler, handleStreamMessage]);
 
     return (
         <>
