@@ -72,18 +72,18 @@ def create_tool_picker(
         include_system=True,
     )
 
-    chat_model = chat_model.with_structured_output(
-        PickTools,
-        method="json_schema",
-        strict=True,
-        include_raw=True,
-    ).with_config(tags=["internal"])
-
     # Disable internal "thinking" behavior when using reasoning models.
     # NOTE: This only applies when using the VLLM-based chat service.
     if isinstance(chat_model, VLLMChatOpenAI):
         extra_body = chat_model.extra_body or {}
         extra_body = extra_body | {"chat_template_kwargs": {"enable_thinking": False}}
         chat_model = chat_model.bind(extra_body=extra_body)
+
+    chat_model = chat_model.with_structured_output(
+        PickTools,
+        method="json_schema",
+        strict=True,
+        include_raw=True,
+    ).with_config(tags=["internal"])
 
     return tmpl | trimmer | chat_model
