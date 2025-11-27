@@ -19,7 +19,11 @@ if TYPE_CHECKING:
 SYS_INST = """You are a helpful assistant with access to a set of tools. Use them only when truly necessary.
 
 Now, choose the most appropriate tool(s) to proceed with your response.
-"""
+
+Your final response must be ONLY valid JSON following the exact schema below.
+Do not include explanations, commentary, or text outside the JSON object.
+
+{schema}"""
 
 
 def create_tool_picker(
@@ -61,7 +65,7 @@ def create_tool_picker(
             ("system", SYS_INST),
             ("placeholder", "{messages}"),
         ]
-    )
+    ).partial(schema=PickTools.model_json_schema())
 
     # Notice we don't pass in messages. This creates
     # a RunnableLambda that takes messages as input
