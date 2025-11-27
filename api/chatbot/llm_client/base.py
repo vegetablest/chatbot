@@ -8,14 +8,82 @@ from langchain_core.callbacks import (
 )
 from langchain_core.language_models.base import LanguageModelInput
 from langchain_core.load.serializable import Serializable
-from langchain_core.messages import BaseMessage, convert_to_openai_messages
-from langchain_core.outputs import ChatGenerationChunk
+from langchain_core.messages import (
+    AIMessageChunk,
+    BaseMessage,
+    convert_to_openai_messages,
+)
+from langchain_core.outputs import ChatGenerationChunk, ChatResult
 from langchain_openai import ChatOpenAI
 from langchain_openai.chat_models.base import _construct_responses_api_payload
-from pydantic import PrivateAttr, Field
+from pydantic import BaseModel, PrivateAttr, Field
 
 
 logger = logging.getLogger(__name__)
+
+
+class ReasoningChatOpenai(ChatOpenAI):
+    """A standard reasoning-chat OpenAI client, which requires the model server’s inference engine
+    to comply with the OpenAI API specification.
+
+    References:
+        https://docs.vllm.ai/en/v0.8.4/features/reasoning_outputs.html
+        https://github.com/langchain-ai/langchain/issues/31326#issuecomment-2998121456
+    """
+
+    def _create_chat_result(
+        self,
+        response: dict | BaseModel,
+        generation_info: dict | None = None,
+    ) -> ChatResult:
+        rtn = super()._create_chat_result(response, generation_info)
+
+        if not isinstance(response, BaseModel):
+            return rtn
+
+        choices = getattr(response, "choices", None)
+        if choices and hasattr(choices[0].message, "reasoning_content"):
+            rtn.generations[0].message.additional_kwargs["reasoning_content"] = choices[
+                0
+            ].message.reasoning_content
+        # Handle use via OpenRouter
+        elif choices and hasattr(choices[0].message, "model_extra"):
+            model_extra = choices[0].message.model_extra
+            if isinstance(model_extra, dict) and (
+                reasoning := model_extra.get("reasoning")
+            ):
+                rtn.generations[0].message.additional_kwargs["reasoning_content"] = (
+                    reasoning
+                )
+
+        return rtn
+
+    def _convert_chunk_to_generation_chunk(
+        self,
+        chunk: dict,
+        default_chunk_class: type,
+        base_generation_info: dict | None,
+    ) -> ChatGenerationChunk | None:
+        generation_chunk = super()._convert_chunk_to_generation_chunk(
+            chunk,
+            default_chunk_class,
+            base_generation_info,
+        )
+        if (choices := chunk.get("choices")) and generation_chunk:
+            top = choices[0]
+            if isinstance(generation_chunk.message, AIMessageChunk):
+                if (
+                    reasoning_content := top.get("delta", {}).get("reasoning_content")
+                ) is not None:
+                    generation_chunk.message.additional_kwargs["reasoning_content"] = (
+                        reasoning_content
+                    )
+                elif (reasoning := top.get("delta", {}).get("reasoning")) is not None:
+                    generation_chunk.message.additional_kwargs["reasoning_content"] = (
+                        reasoning
+                    )
+
+        return generation_chunk
 
 
 class MessageChunk(TypedDict):
@@ -179,7 +247,7 @@ class StreamThinkingProcessor(Serializable):
         self._buffering_signature = None
 
 
-class ExtendedChatOpenAI(ChatOpenAI):
+class ExtendedChatOpenAI(ReasoningChatOpenai):
     thinking_processor: StreamThinkingProcessor | None = None
 
     @override

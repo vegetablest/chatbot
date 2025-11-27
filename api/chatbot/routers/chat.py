@@ -69,7 +69,6 @@ async def chat_stream(
                     input={"messages": [message.to_lc()]},
                     config=runnable_config,
                     stream_mode="messages",
-                    durability="async",
                 ):
                     if "internal" in metadata.get("tags", []):
                         continue  # Skip internal messages.
