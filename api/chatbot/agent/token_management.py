@@ -4,6 +4,7 @@ import logging
 from typing import TYPE_CHECKING, Callable
 
 from langchain_core.messages import BaseMessage
+from langchain_openai.chat_models.base import BaseChatOpenAI
 
 from chatbot.utils import is_valid_positive_int
 
@@ -66,20 +67,25 @@ def resolve_token_management_params(
 
 
 def _get_effective_token_counter(
-    language_model: BaseLanguageModel,
+    chat_model: BaseLanguageModel,
     token_counter: (
         Callable[[list[BaseMessage]], int] | Callable[[BaseMessage], int] | None
     ) = None,
 ) -> tuple[Callable[[list[BaseMessage]], int] | Callable[[BaseMessage], int], bool]:
-    effective_token_counter = token_counter
-    if effective_token_counter is None:
-        effective_token_counter = language_model.get_num_tokens_from_messages
-        logger.info(
-            "Using `get_num_tokens_from_messages` from language_model as token_counter."
-        )
+    if token_counter is not None:
+        return token_counter, (token_counter is len)
 
-    is_message_counting = effective_token_counter is len
-    return effective_token_counter, is_message_counting
+    if (
+        chat_model.get_num_tokens_from_messages.__func__
+        is BaseChatOpenAI.get_num_tokens_from_messages
+    ):
+        logger.info("Using `len` as token_counter (counting by messages).")
+        return len, True
+
+    logger.info(
+        "Using `get_num_tokens_from_messages` from chat_model as token_counter."
+    )
+    return chat_model.get_num_tokens_from_messages, False
 
 
 def _calculate_max_input_tokens(
