@@ -6,14 +6,19 @@ import { messagesReducer } from "./reducer";
 
 
 export const MessageProvider = ({ children }) => {
-    const [currentConv, dispatch] = useReducer(
+    const [state, dispatch] = useReducer(
         messagesReducer,
-        /** @type {[{id: string, title: string?, messages: Array, active: boolean}]} */
-        {id: null, messages: []}
+        { activeId: null, conversations: {} }
     );
 
+    const currentMessages = state.activeId ? state.conversations[state.activeId] ?? [] : [];
+    const currentConv = {
+        id: state.activeId,
+        messages: currentMessages,
+    };
+
     return (
-        <MessageContext.Provider value={{ currentConv, dispatch }}>
+        <MessageContext.Provider value={{ currentConv, conversations: state.conversations, dispatch }}>
             {children}
         </MessageContext.Provider>
     );
