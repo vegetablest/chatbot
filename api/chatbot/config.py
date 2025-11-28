@@ -87,8 +87,13 @@ class Settings(BaseSettings):
                 }
                 base_url = client_kwargs.pop("base_url")
                 provider = (client_kwargs.get("metadata") or {}).get("provider")
+                default_thinking = (client_kwargs.get("metadata") or {}).get(
+                    "default_thinking", False
+                )
                 # TODO: make it more configurable?
-                thinking_processor = StreamThinkingProcessor()
+                thinking_processor = StreamThinkingProcessor(
+                    default_thinking=default_thinking
+                )
                 try:
                     client = llm_client_factory(
                         base_url=base_url,
