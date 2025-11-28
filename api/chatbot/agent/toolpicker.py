@@ -85,8 +85,10 @@ def create_tool_picker(
 
     chat_model = chat_model.with_structured_output(
         PickTools,
-        method="json_schema",
-        strict=True,
+        # https://platform.openai.com/docs/guides/structured-outputs#structured-outputs-vs-json-mode
+        # Deepseek only supports json_mode currently. 
+        # Qwen3 supports json_schema, but it seems to be incomplete.
+        method="json_mode",
         include_raw=True,
     ).with_config(tags=["internal"])
 
